@@ -1,0 +1,167 @@
+name: wildfire-containment-coordinator
+version: "1.0.0"
+description: >
+  A real-world simulation of wildfire suppression where an AI agent
+  coordinates firefighting crews, aircraft, and firebreaks to contain
+  spreading wildfires under dynamic wind conditions and resource constraints.
+  Based on incident command systems used by Cal Fire, FEMA, and Forest Service.
+
+author: "Team Toronto"
+tags: [openenv, wildfire, disaster-response, resource-allocation, grid-world, stochastic]
+license: MIT
+
+# ── Environment Spec ───────────────────────────────────────────
+environment:
+  type: grid-based simulation
+  real_world_basis: Incident Command System (ICS), NIMS wildfire protocols
+  stochastic: true
+  dynamic: true
+  multi_step: true
+
+# ── Observation Space ──────────────────────────────────────────
+observations:
+  type: structured
+  schema:
+    grid:
+      type: array[array[int]]
+      description: "2D grid of cell types (0=empty,1=veg,2=burning,3=burned,4=firebreak,5=water,6=asset,7=asset_burned)"
+    wind:
+      direction:
+        type: float
+        range: [0.0, 360.0]
+        description: "Wind bearing in degrees"
+      speed:
+        type: float
+        range: [0.5, 3.0]
+        description: "Wind speed multiplier"
+    resources:
+      crews:
+        type: int
+        description: "Available crew teams"
+      aircraft:
+        type: int
+        description: "Available aircraft sorties"
+      firebreaks:
+        type: int
+        description: "Remaining firebreak segments"
+    time_step:
+      type: int
+      description: "Current step in episode"
+    containment_pct:
+      type: float
+      range: [0.0, 1.0]
+      description: "Fraction of fire contained"
+    burning_cells:
+      type: int
+    assets_lost:
+      type: int
+    done:
+      type: bool
+
+# ── Action Space ───────────────────────────────────────────────
+actions:
+  - name: deploy_crew
+    description: Send crew to suppress fire or cut firebreak at (x,y)
+    params: {x: int, y: int}
+    cost: "1 crew"
+
+  - name: airdrop
+    description: Drop water/retardant on 3x3 area centered at (x,y)
+    params: {x: int, y: int}
+    cost: "1 aircraft sortie"
+
+  - name: build_break
+    description: Build firebreak segment on vegetation at (x,y)
+    params: {x: int, y: int}
+    cost: "1 crew + 1 firebreak segment"
+
+  - name: evacuate_zone
+    description: Firebreak all cells adjacent to protected assets
+    params: {zone: "optional string"}
+    cost: "no resource cost"
+
+  - name: hold
+    description: Do nothing — observe and wait
+    params: {}
+    cost: "none"
+
+# ── Reward Function ────────────────────────────────────────────
+reward:
+  type: dense + sparse
+  components:
+    - name: containment_bonus
+      value: "+5.0 per burning cell reduced per step"
+    - name: burn_penalty
+      value: "-2.0 per new cell ignited"
+    - name: asset_penalty
+      value: "-15.0 per protected asset lost to fire"
+    - name: efficiency_bonus
+      value: "+2.0 per action that achieves direct suppression"
+    - name: completion_bonus
+      value: "+100.0 when all fires fully contained"
+
+# ── Tasks ──────────────────────────────────────────────────────
+tasks:
+  - id: task_easy
+    name: "Valley Grassfire"
+    difficulty: easy
+    grid_size: 12
+    max_steps: 30
+    success_threshold: 0.85
+    description: "Single ignition, calm wind, ample resources"
+
+  - id: task_medium
+    name: "Canyon Multi-Front"
+    difficulty: medium
+    grid_size: 16
+    max_steps: 45
+    success_threshold: 0.75
+    description: "3 ignition points, moderate shifting wind, limited aircraft, town to protect"
+
+  - id: task_hard
+    name: "Firestorm — Red Flag Warning"
+    difficulty: hard
+    grid_size: 20
+    max_steps: 60
+    success_threshold: 0.50
+    description: "Mass ignition, strong shifting wind, extreme scarcity, critical infrastructure"
+
+# ── Grader ────────────────────────────────────────────────────
+grader:
+  score_range: [0.0, 1.0]
+  type: continuous
+  formula: >
+    score = (containment × 0.35)
+           + (asset_protection × 0.30)
+           + (efficiency × 0.20)
+           + (speed × 0.15)
+
+# ── API Endpoints ─────────────────────────────────────────────
+api:
+  framework: FastAPI
+  port: 7860
+  endpoints:
+    - POST /reset
+    - POST /step
+    - GET  /state
+    - GET  /tasks
+    - POST /grader
+    - POST /baseline
+    - GET  /actions
+
+# ── Deployment ────────────────────────────────────────────────
+deployment:
+  platform: "Hugging Face Spaces"
+  sdk: docker
+  runtime: python3.11
+  memory_gb: 8
+  cpu: 2
+
+# ── Baseline ──────────────────────────────────────────────────
+baseline:
+  agent: greedy_nearest_fire
+  strategy: "Airdrop at centroid of burning cluster; deploy crew to highest-spread-risk cell"
+  expected_scores:
+    task_easy:   ~0.72
+    task_medium: ~0.54
+    task_hard:   ~0.31

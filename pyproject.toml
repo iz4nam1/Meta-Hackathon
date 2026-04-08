@@ -1,0 +1,16 @@
+[project]
+name = "wildfire-containment-coordinator"
+version = "0.1.0"
+description = "OpenEnv wildfire simulation"
+requires-python = ">=3.10"
+
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "requests",
+    "openai",
+    "openenv-core>=0.2.0"
+]
+
+[project.scripts]
+server = "server.app:app"

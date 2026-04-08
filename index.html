@@ -1,0 +1,874 @@
+<!DOCTYPE html>
+<html class="dark" lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Wildfire Containment Coordinator | Tactical Command</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+tailwind.config = {
+  darkMode: "class",
+  theme: {
+    extend: {
+      colors: {
+        "surface-dim": "#131313","secondary-container": "#2b97e1","surface-bright": "#393939",
+        "outline": "#ab8980","on-surface": "#e5e2e1","on-error-container": "#ffdad6",
+        "surface-container-lowest": "#0e0e0e","on-primary-container": "#541200","on-primary": "#5f1500",
+        "surface-tint": "#ffb5a0","secondary": "#96ccff","surface-container": "#201f1f",
+        "surface-variant": "#353534","on-secondary-container": "#002c48","surface-container-low": "#1c1b1b",
+        "on-background": "#e5e2e1","background": "#131313","on-error": "#690005",
+        "error-container": "#93000a","surface-container-high": "#2a2a2a","on-surface-variant": "#e4beb4",
+        "tertiary-fixed-dim": "#ffb3ac","on-secondary": "#003353","primary": "#ffb5a0",
+        "inverse-surface": "#e5e2e1","primary-fixed-dim": "#ffb5a0","tertiary": "#ffb3ac",
+        "primary-container": "#ff5722","surface-container-highest": "#353534","on-primary-fixed": "#3b0900",
+        "inverse-primary": "#b02f00","inverse-on-surface": "#313030","error": "#ffb4ab",
+        "outline-variant": "#5b4039","on-tertiary-container": "#5c0006","surface": "#131313"
+      },
+      fontFamily: {"headline": ["Space Grotesk"],"body": ["Inter"],"label": ["Inter"]},
+      borderRadius: {"DEFAULT": "0.25rem","lg": "0.5rem","xl": "0.75rem","full": "9999px"},
+    },
+  },
+}
+</script>
+<style>
+.material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+@keyframes fire-pulse { 0%,100%{opacity:1;box-shadow:0 0 8px #ff5722;} 50%{opacity:0.7;box-shadow:0 0 20px #ff5722,0 0 40px #ff3000;} }
+@keyframes scanline { 0%{transform:translateY(-100%)} 100%{transform:translateY(100vh)} }
+.fire-cell { animation: fire-pulse 1.2s ease-in-out infinite; }
+.fire-cell-slow { animation: fire-pulse 2s ease-in-out infinite; }
+.tactical-grid { background-image: radial-gradient(rgba(255,87,34,0.08) 1px, transparent 1px); background-size: 24px 24px; }
+.dot-grid { background-image: radial-gradient(circle, #5b4039 1px, transparent 1px); background-size: 16px 16px; }
+.scanline-overlay { background: linear-gradient(to bottom, transparent 50%, rgba(255,181,160,0.03) 50.5%, transparent 51%); background-size: 100% 4px; pointer-events:none; }
+.glass-panel { background: rgba(42,42,42,0.9); backdrop-filter: blur(20px); }
+.glow-btn:hover { box-shadow: 0 0 20px rgba(255,87,34,0.5); }
+.grid-container { display: grid; gap: 1px; background: #1a1a1a; border: 1px solid #5b4039; }
+.cell { cursor: crosshair; transition: all 0.15s; min-width:0; min-height:0; }
+.cell:hover { opacity: 0.8; transform: scale(1.1); z-index:10; position:relative; }
+.cell-empty    { background: #2a2520; }
+.cell-veg      { background: #1a3d1a; }
+.cell-burning  { background: #ff5722; animation: fire-pulse 1s ease-in-out infinite; }
+.cell-burned   { background: #1a1208; }
+.cell-firebreak{ background: #4a3520; border: 1px solid #8B6914; }
+.cell-water    { background: #0d2d4a; }
+.cell-asset    { background: #4a4a00; border: 1px solid #f59e0b; }
+.cell-asset-burned { background: #3d0000; }
+.cell-selected { outline: 2px solid #96ccff !important; z-index:10; position:relative; }
+.log-entry { animation: fadeIn 0.3s ease; }
+@keyframes fadeIn { from{opacity:0;transform:translateY(-4px)} to{opacity:1;transform:translateY(0)} }
+.score-ring { transform: rotate(-90deg); transform-origin: 50% 50%; }
+</style>
+</head>
+<body class="bg-surface-dim text-on-surface font-body overflow-hidden select-none">
+
+<!-- ═══════════════════════════════════════════════════ -->
+<!-- SHARED NAV -->
+<!-- ═══════════════════════════════════════════════════ -->
+<nav class="bg-[#131313] flex justify-between items-center w-full px-6 py-3 fixed top-0 z-50 border-b border-[#ff5722]/20">
+  <div class="flex items-center gap-8">
+    <span class="text-xl font-black text-[#ffb5a0] tracking-widest font-headline cursor-pointer" onclick="showScreen('landing')">TACTICAL COMMAND</span>
+    <div class="hidden md:flex gap-6 items-center">
+      <span class="font-headline tracking-tighter uppercase font-bold text-[#ffb5a0] border-b-2 border-[#ff5722] pb-1 cursor-pointer" onclick="showScreen('landing')">MAP</span>
+      <span class="font-headline tracking-tighter uppercase font-bold text-[#e4beb4] opacity-70 hover:text-[#ffb5a0] cursor-pointer transition-colors" onclick="showScreen('sim')">SIMULATION</span>
+      <span class="font-headline tracking-tighter uppercase font-bold text-[#e4beb4] opacity-70 hover:text-[#ffb5a0] cursor-pointer transition-colors" onclick="showScreen('results')">REPORTS</span>
+    </div>
+  </div>
+  <div class="flex items-center gap-4">
+    <div id="api-status" class="flex items-center gap-2 px-3 py-1 bg-surface-container-highest">
+      <div class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
+      <span class="text-[10px] font-bold text-green-500 uppercase tracking-wider">API CONNECTED</span>
+    </div>
+    <div class="text-right hidden lg:block">
+      <span class="text-[10px] font-bold text-primary tracking-widest block">CURRENT TASK</span>
+      <span id="nav-task" class="font-mono text-xs text-on-surface-variant">— NONE SELECTED —</span>
+    </div>
+  </div>
+</nav>
+
+<!-- ═══════════════════════════════════════════════════ -->
+<!-- SCREEN 1: LANDING -->
+<!-- ═══════════════════════════════════════════════════ -->
+<div id="screen-landing" class="screen min-h-screen pt-16 tactical-grid overflow-auto">
+  <main class="max-w-7xl mx-auto px-6 py-12">
+    <section class="flex flex-col items-start gap-4 mb-16 relative">
+      <div class="absolute -left-4 top-0 w-1 h-32 bg-primary-container"></div>
+      <h1 class="font-headline text-5xl md:text-7xl font-bold tracking-tighter leading-none">
+        🌲🔥 Wildfire Containment<br>Coordinator
+      </h1>
+      <p class="font-body text-xl text-on-surface-variant max-w-2xl leading-relaxed">
+        AI-powered real-time wildfire suppression simulation. Deploy crews, aircraft, and firebreaks to contain spreading fires under dynamic wind conditions.
+      </p>
+      <div class="mt-6 flex gap-8 py-3 px-6 bg-surface-container-lowest border-l-4 border-primary">
+        <div class="flex flex-col">
+          <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">SATELLITE LINK</span>
+          <span class="font-mono text-secondary text-sm">ENCRYPTED // STABLE</span>
+        </div>
+        <div class="flex flex-col border-l border-outline-variant/30 pl-8">
+          <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">API STATUS</span>
+          <span id="landing-api-status" class="font-mono text-green-400 text-sm">CHECKING...</span>
+        </div>
+        <div class="flex flex-col border-l border-outline-variant/30 pl-8">
+          <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">ENVIRONMENT</span>
+          <span class="font-mono text-tertiary text-sm">OPENENV v1.0</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- MISSION CARDS -->
+    <section class="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <!-- EASY -->
+      <div class="flex flex-col bg-surface-container-high border-t-2 border-secondary-container p-6 space-y-4 hover:bg-surface-container-highest transition-all duration-300 cursor-pointer group" onclick="startMission('task_easy')">
+        <div class="flex justify-between items-start">
+          <span class="bg-secondary-container/20 text-secondary text-[10px] font-black px-2 py-1 tracking-widest uppercase">🟢 EASY RECON</span>
+          <span class="material-symbols-outlined text-secondary opacity-50">deployed_code</span>
+        </div>
+        <h3 class="font-headline text-2xl font-bold text-on-surface uppercase tracking-tight">OAK RIDGE SECTOR</h3>
+        <div class="space-y-1 text-sm text-on-surface-variant">
+          <div class="flex justify-between"><span>Grid Size</span><span class="text-on-surface font-mono">12×12</span></div>
+          <div class="flex justify-between"><span>Max Steps</span><span class="text-on-surface font-mono">30</span></div>
+          <div class="flex justify-between"><span>Resources</span><span class="text-on-surface font-mono">4 crews · 3 aircraft</span></div>
+          <div class="flex justify-between"><span>Wind</span><span class="text-secondary font-mono">NE · CALM</span></div>
+          <div class="flex justify-between"><span>Assets</span><span class="text-amber-400 font-mono">2 protected</span></div>
+        </div>
+        <p class="font-body text-sm text-on-surface-variant leading-tight">
+          Single ignition point. Steady predictable wind. Ideal for learning containment strategy.
+        </p>
+        <button class="w-full bg-secondary-container/80 text-on-secondary-container font-headline font-black py-4 uppercase tracking-widest text-xs hover:bg-secondary-container transition-all flex items-center justify-center gap-2 group-hover:shadow-[0_0_20px_rgba(43,151,225,0.4)]">
+          LAUNCH MISSION <span class="material-symbols-outlined text-sm">arrow_forward</span>
+        </button>
+      </div>
+
+      <!-- MEDIUM -->
+      <div class="flex flex-col bg-surface-container-high border-t-2 border-primary-container p-6 space-y-4 hover:bg-surface-container-highest transition-all duration-300 cursor-pointer group" onclick="startMission('task_medium')">
+        <div class="flex justify-between items-start">
+          <span class="bg-primary-container/20 text-primary text-[10px] font-black px-2 py-1 tracking-widest uppercase">🟡 TACTICAL RESPONSE</span>
+          <span class="material-symbols-outlined text-primary opacity-50">monitoring</span>
+        </div>
+        <h3 class="font-headline text-2xl font-bold text-on-surface uppercase tracking-tight">VALLEY RIM GORGE</h3>
+        <div class="space-y-1 text-sm text-on-surface-variant">
+          <div class="flex justify-between"><span>Grid Size</span><span class="text-on-surface font-mono">16×16</span></div>
+          <div class="flex justify-between"><span>Max Steps</span><span class="text-on-surface font-mono">45</span></div>
+          <div class="flex justify-between"><span>Resources</span><span class="text-on-surface font-mono">5 crews · 4 aircraft</span></div>
+          <div class="flex justify-between"><span>Wind</span><span class="text-primary font-mono">WEST · MODERATE</span></div>
+          <div class="flex justify-between"><span>Assets</span><span class="text-amber-400 font-mono">6 protected (town)</span></div>
+        </div>
+        <p class="font-body text-sm text-on-surface-variant leading-tight">
+          3 ignition points. Wind shifts. A town on the eastern edge must survive at all costs.
+        </p>
+        <button class="w-full bg-primary-container text-on-primary-container font-headline font-black py-4 uppercase tracking-widest text-xs glow-btn transition-all flex items-center justify-center gap-2">
+          LAUNCH MISSION <span class="material-symbols-outlined text-sm">arrow_forward</span>
+        </button>
+      </div>
+
+      <!-- HARD -->
+      <div class="flex flex-col bg-surface-container-high border-t-2 border-error-container p-6 space-y-4 hover:bg-surface-container-highest transition-all duration-300 cursor-pointer group" onclick="startMission('task_hard')">
+        <div class="flex justify-between items-start">
+          <span class="bg-error-container/20 text-tertiary text-[10px] font-black px-2 py-1 tracking-widest uppercase">🔴 CRITICAL INCIDENT</span>
+          <span class="material-symbols-outlined text-tertiary opacity-50">local_fire_department</span>
+        </div>
+        <h3 class="font-headline text-2xl font-bold text-on-surface uppercase tracking-tight">SIERRA PEAK FRONT</h3>
+        <div class="space-y-1 text-sm text-on-surface-variant">
+          <div class="flex justify-between"><span>Grid Size</span><span class="text-on-surface font-mono">20×20</span></div>
+          <div class="flex justify-between"><span>Max Steps</span><span class="text-on-surface font-mono">60</span></div>
+          <div class="flex justify-between"><span>Resources</span><span class="text-on-surface font-mono">4 crews · 3 aircraft</span></div>
+          <div class="flex justify-between"><span>Wind</span><span class="text-tertiary font-mono">NW · STRONG SHIFTING</span></div>
+          <div class="flex justify-between"><span>Assets</span><span class="text-amber-400 font-mono">10 critical</span></div>
+        </div>
+        <p class="font-body text-sm text-on-surface-variant leading-tight">
+          Mass ignition. Extreme resource scarcity. Adaptive strategy essential. No plan survives wind shifts.
+        </p>
+        <button class="w-full bg-error-container text-on-error-container font-headline font-black py-4 uppercase tracking-widest text-xs hover:shadow-[0_0_20px_rgba(147,0,10,0.5)] transition-all flex items-center justify-center gap-2">
+          LAUNCH MISSION <span class="material-symbols-outlined text-sm">arrow_forward</span>
+        </button>
+      </div>
+    </section>
+
+    <!-- INFO STRIP -->
+    <div class="mt-12 p-4 bg-surface-container-lowest border border-outline-variant/20 flex gap-8 flex-wrap">
+      <div class="text-center"><div class="text-2xl font-headline font-black text-primary">5</div><div class="text-[10px] text-on-surface-variant uppercase">Action Types</div></div>
+      <div class="text-center"><div class="text-2xl font-headline font-black text-secondary">8</div><div class="text-[10px] text-on-surface-variant uppercase">Cell Types</div></div>
+      <div class="text-center"><div class="text-2xl font-headline font-black text-tertiary">4</div><div class="text-[10px] text-on-surface-variant uppercase">Score Factors</div></div>
+      <div class="text-center"><div class="text-2xl font-headline font-black text-green-400">0.0–1.0</div><div class="text-[10px] text-on-surface-variant uppercase">Grader Range</div></div>
+      <div class="flex-1 text-right text-[10px] text-on-surface-variant self-center">
+        API: <span class="text-primary font-mono text-xs" id="api-url-display">https://ixanami-wildfire-containment-coordinator.hf.space</span>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- ═══════════════════════════════════════════════════ -->
+<!-- SCREEN 2: SIMULATION -->
+<!-- ═══════════════════════════════════════════════════ -->
+<div id="screen-sim" class="screen hidden h-screen pt-14 flex flex-col">
+  <!-- Telemetry Strip -->
+  <div class="h-9 bg-surface-container-lowest border-b border-outline-variant/10 flex items-center px-6 gap-8 overflow-x-auto whitespace-nowrap shrink-0">
+    <div class="flex items-center gap-2">
+      <span class="text-[10px] text-on-surface-variant uppercase">Task:</span>
+      <span id="tel-task" class="text-xs font-headline text-primary font-bold">—</span>
+    </div>
+    <div class="flex items-center gap-2">
+      <span class="text-[10px] text-on-surface-variant uppercase">Step:</span>
+      <span id="tel-step" class="text-xs font-headline text-on-surface font-bold tabular-nums">0/0</span>
+    </div>
+    <div class="flex items-center gap-2">
+      <span class="text-[10px] text-on-surface-variant uppercase">Wind:</span>
+      <span id="tel-wind" class="text-xs font-headline text-secondary font-bold">—</span>
+    </div>
+    <div class="flex items-center gap-2">
+      <span class="text-[10px] text-on-surface-variant uppercase">Burning:</span>
+      <span id="tel-burning" class="text-xs font-headline text-tertiary font-bold tabular-nums">0</span>
+    </div>
+    <div class="flex items-center gap-2">
+      <span class="text-[10px] text-on-surface-variant uppercase">Contained:</span>
+      <span id="tel-contained" class="text-xs font-headline text-green-400 font-bold tabular-nums">—%</span>
+    </div>
+    <div class="ml-auto flex items-center gap-2">
+      <span id="agent-pill" class="hidden items-center gap-2 bg-surface-container-highest px-3 py-1">
+        <div class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
+        <span class="text-[10px] font-bold text-green-500 uppercase">AI AGENT RUNNING</span>
+      </span>
+    </div>
+  </div>
+
+  <div class="flex flex-1 overflow-hidden">
+    <!-- LEFT: GRID -->
+    <div class="flex-1 flex flex-col p-4 bg-surface-dim relative overflow-hidden">
+      <div class="absolute inset-0 dot-grid opacity-10 pointer-events-none"></div>
+
+      <!-- Grid header -->
+      <div class="flex justify-between items-center mb-3 z-10">
+        <h3 class="text-xs font-headline font-bold tracking-widest text-on-surface-variant">TACTICAL GRID — <span id="grid-label">—</span></h3>
+        <div class="flex gap-4 text-[9px] font-label uppercase text-on-surface-variant">
+          <span class="flex items-center gap-1"><div class="w-2.5 h-2.5 cell-veg inline-block"></div> Veg</span>
+          <span class="flex items-center gap-1"><div class="w-2.5 h-2.5 cell-burning inline-block"></div> Fire</span>
+          <span class="flex items-center gap-1"><div class="w-2.5 h-2.5 cell-burned inline-block"></div> Burned</span>
+          <span class="flex items-center gap-1"><div class="w-2.5 h-2.5 cell-firebreak inline-block"></div> Firebreak</span>
+          <span class="flex items-center gap-1"><div class="w-2.5 h-2.5 cell-water inline-block"></div> Water</span>
+          <span class="flex items-center gap-1"><div class="w-2.5 h-2.5 cell-asset inline-block"></div> Asset</span>
+        </div>
+      </div>
+
+      <!-- Selected cell info -->
+      <div id="selected-info" class="hidden mb-2 px-3 py-1.5 bg-surface-container-lowest border border-secondary text-xs font-mono text-secondary z-10">
+        SELECTED: <span id="selected-coords">—</span> | Click action button to execute
+      </div>
+
+      <!-- THE GRID -->
+      <div class="flex-1 flex items-center justify-center z-10 overflow-hidden">
+        <div id="fire-grid" class="grid-container" style="width:100%;height:100%;max-width:600px;max-height:600px;"></div>
+      </div>
+
+      <!-- Bottom: Action Log -->
+      <div class="h-28 mt-3 bg-surface-container-lowest border border-outline-variant/10 overflow-y-auto z-10" id="action-log">
+        <div class="px-3 py-1 border-b border-outline-variant/10 flex justify-between sticky top-0 bg-surface-container-lowest">
+          <span class="text-[9px] font-headline font-bold tracking-widest text-on-surface-variant uppercase">Mission Log</span>
+          <button onclick="clearLog()" class="text-[9px] text-on-surface-variant hover:text-primary">CLEAR</button>
+        </div>
+        <div id="log-entries" class="font-mono text-[10px] p-2 space-y-0.5"></div>
+      </div>
+    </div>
+
+    <!-- RIGHT: CONTROLS -->
+    <div class="w-72 flex flex-col bg-[#1a1a1a] border-l border-[#ff5722]/20 overflow-y-auto shrink-0">
+
+      <!-- Wind Compass -->
+      <div class="p-4 border-b border-outline-variant/10">
+        <div class="flex items-center gap-4">
+          <div class="relative w-20 h-20 flex items-center justify-center border border-outline-variant/30 rounded-full shrink-0">
+            <span class="absolute top-1 text-[8px] font-bold text-on-surface-variant">N</span>
+            <span class="absolute right-1 text-[8px] font-bold text-on-surface-variant">E</span>
+            <span class="absolute bottom-1 text-[8px] font-bold text-on-surface-variant">S</span>
+            <span class="absolute left-1 text-[8px] font-bold text-on-surface-variant">W</span>
+            <div id="wind-arrow" class="w-0.5 h-7 bg-primary-container absolute origin-bottom transition-transform" style="transform:rotate(0deg) translateY(-50%)"></div>
+            <div class="text-[9px] font-headline font-bold text-on-surface mt-6" id="wind-label">—</div>
+          </div>
+          <div>
+            <div class="text-[9px] text-on-surface-variant uppercase mb-1">Wind Vector</div>
+            <div id="wind-detail" class="text-xs font-mono text-secondary">—</div>
+            <div class="text-[9px] text-on-surface-variant uppercase mt-2 mb-1">Spread Direction</div>
+            <div id="wind-spread" class="text-xs font-mono text-primary">—</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Metrics -->
+      <div class="grid grid-cols-2 gap-1 p-3 border-b border-outline-variant/10">
+        <div class="bg-surface-container p-2 border-l-2 border-primary-container">
+          <div class="text-[9px] text-on-surface-variant uppercase">Contained</div>
+          <div id="m-contained" class="text-lg font-headline font-bold text-primary tabular-nums">—%</div>
+        </div>
+        <div class="bg-surface-container p-2 border-l-2 border-secondary">
+          <div class="text-[9px] text-on-surface-variant uppercase">Assets</div>
+          <div id="m-assets" class="text-lg font-headline font-bold text-on-surface tabular-nums">—/—</div>
+        </div>
+        <div class="bg-surface-container p-2 border-l-2 border-outline">
+          <div class="text-[9px] text-on-surface-variant uppercase">Steps Left</div>
+          <div id="m-steps" class="text-lg font-headline font-bold text-on-surface tabular-nums">—</div>
+        </div>
+        <div class="bg-surface-container p-2 border-l-2 border-tertiary">
+          <div class="text-[9px] text-on-surface-variant uppercase">Burning</div>
+          <div id="m-burning" class="text-lg font-headline font-bold text-tertiary tabular-nums">—</div>
+        </div>
+      </div>
+
+      <!-- Resources -->
+      <div class="p-4 border-b border-outline-variant/10">
+        <h4 class="text-[9px] font-headline font-bold tracking-widest text-on-surface-variant uppercase mb-3">Resources</h4>
+        <div class="space-y-2">
+          <div>
+            <div class="flex justify-between text-[9px] uppercase mb-1">
+              <span class="flex items-center gap-1"><span class="material-symbols-outlined text-xs">groups</span> Crews</span>
+              <span id="r-crews" class="font-bold text-on-surface">—</span>
+            </div>
+            <div class="h-1 bg-surface-container-highest"><div id="r-crews-bar" class="h-full bg-primary-container transition-all" style="width:100%"></div></div>
+          </div>
+          <div>
+            <div class="flex justify-between text-[9px] uppercase mb-1">
+              <span class="flex items-center gap-1"><span class="material-symbols-outlined text-xs">airplanemode_active</span> Aircraft</span>
+              <span id="r-aircraft" class="font-bold text-on-surface">—</span>
+            </div>
+            <div class="h-1 bg-surface-container-highest"><div id="r-aircraft-bar" class="h-full bg-secondary transition-all" style="width:100%"></div></div>
+          </div>
+          <div>
+            <div class="flex justify-between text-[9px] uppercase mb-1">
+              <span class="flex items-center gap-1"><span class="material-symbols-outlined text-xs">construction</span> Firebreaks</span>
+              <span id="r-breaks" class="font-bold text-on-surface">—</span>
+            </div>
+            <div class="h-1 bg-surface-container-highest"><div id="r-breaks-bar" class="h-full bg-outline transition-all" style="width:100%"></div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- SELECTED TARGET -->
+      <div class="p-4 border-b border-outline-variant/10">
+        <div class="text-[9px] font-headline font-bold tracking-widest text-on-surface-variant uppercase mb-2">Target Cell</div>
+        <div class="bg-surface-container-lowest p-2 font-mono text-xs flex justify-between items-center">
+          <span id="target-display" class="text-secondary">CLICK GRID TO SELECT</span>
+          <button onclick="clearSelection()" class="text-[9px] text-on-surface-variant hover:text-primary">✕</button>
+        </div>
+      </div>
+
+      <!-- ACTION BUTTONS -->
+      <div class="p-4 border-b border-outline-variant/10">
+        <div class="flex justify-between items-center mb-3">
+          <span class="text-[9px] font-headline font-bold tracking-widest text-on-surface-variant uppercase">Execute Action</span>
+        </div>
+        <div class="grid grid-cols-2 gap-2">
+          <button onclick="executeAction('deploy_crew')" class="bg-surface-container-highest border border-outline-variant/30 py-2.5 flex items-center justify-center gap-1.5 hover:bg-primary-container hover:text-on-primary-container transition-all text-[10px] font-bold uppercase tracking-tighter">
+            <span class="material-symbols-outlined text-sm">groups</span>CREW
+          </button>
+          <button onclick="executeAction('airdrop')" class="bg-surface-container-highest border border-outline-variant/30 py-2.5 flex items-center justify-center gap-1.5 hover:bg-secondary hover:text-on-secondary transition-all text-[10px] font-bold uppercase tracking-tighter">
+            <span class="material-symbols-outlined text-sm">water_drop</span>AIRDROP
+          </button>
+          <button onclick="executeAction('build_break')" class="bg-surface-container-highest border border-outline-variant/30 py-2.5 flex items-center justify-center gap-1.5 hover:bg-outline hover:text-on-surface transition-all text-[10px] font-bold uppercase tracking-tighter">
+            <span class="material-symbols-outlined text-sm">construction</span>BREAK
+          </button>
+          <button onclick="executeAction('evacuate_zone')" class="bg-surface-container-highest border border-outline-variant/30 py-2.5 flex items-center justify-center gap-1.5 hover:bg-error-container hover:text-on-error-container transition-all text-[10px] font-bold uppercase tracking-tighter">
+            <span class="material-symbols-outlined text-sm">emergency_home</span>EVAC
+          </button>
+          <button onclick="executeAction('hold')" class="col-span-2 bg-surface-container border border-outline-variant/20 py-2.5 flex items-center justify-center gap-1.5 hover:bg-surface-container-highest transition-all text-[10px] font-black uppercase tracking-widest">
+            <span class="material-symbols-outlined text-sm">pan_tool</span>HOLD POSITION
+          </button>
+        </div>
+      </div>
+
+      <!-- AI AGENT CONTROL -->
+      <div class="p-4 border-b border-outline-variant/10">
+        <div class="text-[9px] font-headline font-bold tracking-widest text-on-surface-variant uppercase mb-3">AI Agent</div>
+        <button id="agent-btn" onclick="toggleAgent()" class="w-full py-3 bg-surface-container border border-green-500/30 text-green-400 font-headline font-black text-xs tracking-widest uppercase hover:bg-green-900/20 transition-all flex items-center justify-center gap-2">
+          <span class="material-symbols-outlined text-sm">smart_toy</span>
+          RUN AI AGENT
+        </button>
+        <div class="mt-2 text-[9px] text-on-surface-variant text-center">Baseline greedy agent — auto-plays episode</div>
+      </div>
+
+      <!-- RESET / GRADE -->
+      <div class="p-4 flex gap-2">
+        <button onclick="resetMission()" class="flex-1 py-2.5 bg-surface-container-highest text-on-surface font-headline font-bold text-[10px] tracking-widest uppercase hover:bg-surface-bright transition-all">
+          ↺ RESET
+        </button>
+        <button onclick="gradeMission()" class="flex-1 py-2.5 bg-primary-container text-on-primary-container font-headline font-black text-[10px] tracking-widest uppercase glow-btn transition-all">
+          GRADE ▶
+        </button>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════ -->
+<!-- SCREEN 3: RESULTS -->
+<!-- ═══════════════════════════════════════════════════ -->
+<div id="screen-results" class="screen hidden h-screen pt-14 overflow-auto dot-grid">
+  <div class="max-w-4xl mx-auto px-8 py-12 flex flex-col items-center gap-8">
+
+    <!-- Score Ring -->
+    <div class="relative w-72 h-72 flex items-center justify-center">
+      <svg class="absolute inset-0 w-full h-full" viewBox="0 0 288 288">
+        <circle cx="144" cy="144" r="130" fill="transparent" stroke="#353534" stroke-width="6"/>
+        <circle id="score-ring" cx="144" cy="144" r="130" fill="transparent" stroke="#ff5722"
+          stroke-width="14" stroke-linecap="round"
+          stroke-dasharray="816.8" stroke-dashoffset="816.8"
+          class="score-ring transition-all duration-1000"/>
+      </svg>
+      <div class="text-center z-10">
+        <div class="text-[10px] font-label uppercase tracking-widest text-on-surface-variant mb-1">Final Score</div>
+        <div id="final-score-display" class="text-8xl font-headline font-black text-on-surface tracking-tighter">—</div>
+        <div id="outcome-badge" class="mt-3 px-6 py-2 font-headline font-black text-xl tracking-widest uppercase">—</div>
+      </div>
+      <div class="absolute -top-2 -left-2 w-8 h-8 border-t-4 border-l-4 border-primary"></div>
+      <div class="absolute -bottom-2 -right-2 w-8 h-8 border-b-4 border-r-4 border-primary"></div>
+    </div>
+
+    <!-- Breakdown + Stats -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 w-full">
+
+      <!-- Score breakdown -->
+      <div class="glass-panel p-6 space-y-5">
+        <h3 class="font-headline text-lg font-bold text-primary uppercase tracking-tight flex items-center gap-2">
+          <span class="material-symbols-outlined text-sm">analytics</span>Incident Metrics
+        </h3>
+        <div id="breakdown-bars" class="space-y-4"></div>
+      </div>
+
+      <!-- Stats + Play Again -->
+      <div class="glass-panel p-6 flex flex-col gap-4">
+        <h3 class="font-headline text-lg font-bold text-primary uppercase tracking-tight flex items-center gap-2">
+          <span class="material-symbols-outlined text-sm">history_edu</span>Mission Stats
+        </h3>
+        <div id="stats-grid" class="grid grid-cols-2 gap-3 text-sm"></div>
+        <div class="mt-auto flex gap-3">
+          <button onclick="showScreen('landing')" class="flex-1 py-3 bg-surface-container-highest text-on-surface font-headline font-bold text-xs tracking-widest uppercase hover:bg-surface-bright transition-all">
+            ← MAIN MENU
+          </button>
+          <button onclick="resetMission();showScreen('sim')" class="flex-1 py-3 bg-primary-container text-on-primary-container font-headline font-black text-xs tracking-widest uppercase glow-btn transition-all">
+            PLAY AGAIN
+          </button>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Footer telemetry -->
+    <div id="result-telemetry" class="w-full bg-surface-container-lowest p-4 flex justify-around border border-outline-variant/20"></div>
+  </div>
+</div>
+
+<!-- Loading overlay -->
+<div id="loading" class="hidden fixed inset-0 bg-black/70 z-[200] flex items-center justify-center">
+  <div class="bg-surface-container-high p-8 border border-primary/30 flex flex-col items-center gap-4">
+    <div class="w-12 h-12 border-4 border-primary/30 border-t-primary rounded-full animate-spin"></div>
+    <div class="text-primary font-headline font-bold tracking-widest uppercase text-sm" id="loading-text">INITIALIZING...</div>
+  </div>
+</div>
+
+<!-- Scanline overlay -->
+<div class="fixed inset-0 scanline-overlay z-[100] pointer-events-none opacity-20"></div>
+
+<script>
+// ═══════════════════════════════════════════════════
+// CONFIG
+// ═══════════════════════════════════════════════════
+const API = 'https://ixanami-wildfire-containment-coordinator.hf.space';
+
+// State
+let state = {
+  currentTask: null,
+  currentObs: null,
+  selectedCell: null,
+  agentRunning: false,
+  agentInterval: null,
+  maxCrews: 1, maxAircraft: 1, maxBreaks: 1,
+  log: []
+};
+
+// ═══════════════════════════════════════════════════
+// SCREEN MANAGEMENT
+// ═══════════════════════════════════════════════════
+function showScreen(name) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.add('hidden'));
+  document.getElementById('screen-' + name).classList.remove('hidden');
+}
+
+// ═══════════════════════════════════════════════════
+// API HELPERS
+// ═══════════════════════════════════════════════════
+async function apiCall(method, path, body) {
+  const opts = { method, headers: {'Content-Type':'application/json'} };
+  if (body) opts.body = JSON.stringify(body);
+  const r = await fetch(API + path, opts);
+  if (!r.ok) throw new Error(`API ${r.status}: ${await r.text()}`);
+  return r.json();
+}
+
+// ═══════════════════════════════════════════════════
+// CHECK API ON LOAD
+// ═══════════════════════════════════════════════════
+async function checkApi() {
+  try {
+    await apiCall('GET', '/');
+    document.getElementById('landing-api-status').textContent = 'CONNECTED // LIVE';
+    document.getElementById('landing-api-status').className = 'font-mono text-green-400 text-sm';
+  } catch(e) {
+    document.getElementById('landing-api-status').textContent = 'UNREACHABLE';
+    document.getElementById('landing-api-status').className = 'font-mono text-red-400 text-sm';
+    document.getElementById('api-status').innerHTML = '<div class="w-2 h-2 rounded-full bg-red-500"></div><span class="text-[10px] font-bold text-red-500 uppercase tracking-wider">API OFFLINE</span>';
+  }
+}
+
+// ═══════════════════════════════════════════════════
+// MISSION START
+// ═══════════════════════════════════════════════════
+async function startMission(taskId) {
+  showLoading('INITIALIZING MISSION...');
+  try {
+    const data = await apiCall('POST', '/reset', {task_id: taskId});
+    state.currentTask = taskId;
+    state.currentObs = data.observation;
+    state.maxCrews    = data.observation.resources.crews;
+    state.maxAircraft = data.observation.resources.aircraft;
+    state.maxBreaks   = data.observation.resources.firebreaks;
+    state.log = [];
+    state.selectedCell = null;
+
+    const taskNames = {task_easy:'Valley Grassfire', task_medium:'Canyon Multi-Front', task_hard:'Firestorm Red Flag'};
+    document.getElementById('nav-task').textContent = taskNames[taskId] || taskId;
+    document.getElementById('tel-task').textContent = taskNames[taskId] || taskId;
+
+    addLog('MISSION START', `Task: ${taskNames[taskId]}`, 'info');
+    renderAll(data.observation);
+    showScreen('sim');
+  } catch(e) {
+    alert('API Error: ' + e.message);
+  } finally {
+    hideLoading();
+  }
+}
+
+// ═══════════════════════════════════════════════════
+// RENDER GRID
+// ═══════════════════════════════════════════════════
+const CELL_CLASSES = ['cell-empty','cell-veg','cell-burning','cell-burned','cell-firebreak','cell-water','cell-asset','cell-asset-burned'];
+
+function renderGrid(obs) {
+  const grid = obs.grid;
+  const rows = grid.length;
+  const cols = grid[0].length;
+  const container = document.getElementById('fire-grid');
+
+  container.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+  container.style.gridTemplateRows    = `repeat(${rows}, 1fr)`;
+
+  // Only rebuild if size changed
+  if (container.children.length !== rows * cols) {
+    container.innerHTML = '';
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const div = document.createElement('div');
+        div.className = 'cell';
+        div.dataset.r = r;
+        div.dataset.c = c;
+        div.onclick = () => selectCell(r, c, grid[r][c]);
+        container.appendChild(div);
+      }
+    }
+  }
+
+  // Update classes
+  const cells = container.children;
+  let i = 0;
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const cell = cells[i++];
+      const v = grid[r][c];
+      cell.className = 'cell ' + CELL_CLASSES[v];
+      if (state.selectedCell && state.selectedCell[0] === r && state.selectedCell[1] === c) {
+        cell.classList.add('cell-selected');
+      }
+    }
+  }
+  document.getElementById('grid-label').textContent = `${rows}×${cols}`;
+}
+
+function renderMetrics(obs) {
+  const contained = (obs.containment_pct * 100).toFixed(1);
+  document.getElementById('tel-step').textContent = `${obs.time_step}/${obs.total_steps}`;
+  document.getElementById('tel-burning').textContent = obs.burning_cells;
+  document.getElementById('tel-contained').textContent = contained + '%';
+  document.getElementById('m-contained').textContent = contained + '%';
+  document.getElementById('m-assets').textContent = `${obs.assets_total - obs.assets_lost}/${obs.assets_total}`;
+  document.getElementById('m-steps').textContent = obs.total_steps - obs.time_step;
+  document.getElementById('m-burning').textContent = obs.burning_cells;
+
+  // Resources
+  const r = obs.resources;
+  document.getElementById('r-crews').textContent = r.crews;
+  document.getElementById('r-aircraft').textContent = r.aircraft;
+  document.getElementById('r-breaks').textContent = r.firebreaks;
+  document.getElementById('r-crews-bar').style.width    = (r.crews    / Math.max(state.maxCrews,1)    * 100) + '%';
+  document.getElementById('r-aircraft-bar').style.width = (r.aircraft / Math.max(state.maxAircraft,1) * 100) + '%';
+  document.getElementById('r-breaks-bar').style.width   = (r.firebreaks / Math.max(state.maxBreaks,1) * 100) + '%';
+
+  // Wind
+  const wd = obs.wind.direction;
+  const ws = obs.wind.speed;
+  const dirs = ['N','NE','E','SE','S','SW','W','NW','N'];
+  const compass = dirs[Math.round(wd / 45) % 8];
+  document.getElementById('wind-label').textContent = compass;
+  document.getElementById('wind-detail').textContent = `${wd.toFixed(0)}° · ${ws.toFixed(1)}× speed`;
+  document.getElementById('wind-spread').textContent = `Fire spreads → ${compass}`;
+  document.getElementById('tel-wind').textContent = `${compass} ${ws.toFixed(1)}×`;
+  document.getElementById('wind-arrow').style.transform = `rotate(${wd}deg) translateY(-50%)`;
+}
+
+function renderAll(obs) {
+  renderGrid(obs);
+  renderMetrics(obs);
+}
+
+// ═══════════════════════════════════════════════════
+// CELL SELECTION
+// ═══════════════════════════════════════════════════
+function selectCell(r, c, v) {
+  state.selectedCell = [r, c, v];
+  const cellNames = ['Empty','Vegetation','BURNING','Burned','Firebreak','Water','Asset','Asset Lost'];
+  document.getElementById('selected-info').classList.remove('hidden');
+  document.getElementById('selected-coords').textContent = `row=${r}, col=${c} [${cellNames[v]}]`;
+  document.getElementById('target-display').textContent = `row=${r}  col=${c}  [${cellNames[v]}]`;
+  renderGrid(state.currentObs);
+}
+
+function clearSelection() {
+  state.selectedCell = null;
+  document.getElementById('selected-info').classList.add('hidden');
+  document.getElementById('target-display').textContent = 'CLICK GRID TO SELECT';
+  if (state.currentObs) renderGrid(state.currentObs);
+}
+
+// ═══════════════════════════════════════════════════
+// EXECUTE ACTION
+// ═══════════════════════════════════════════════════
+async function executeAction(actionType) {
+  if (!state.currentTask) { alert('Start a mission first!'); return; }
+  if (state.currentObs?.done) { addLog('EPISODE DONE', 'Reset or grade the mission', 'warn'); return; }
+
+  const body = { action_type: actionType };
+  if (['deploy_crew','airdrop','build_break'].includes(actionType)) {
+    if (!state.selectedCell) {
+      addLog('NO TARGET', 'Click a grid cell first, then click action', 'warn');
+      return;
+    }
+    body.x = state.selectedCell[1]; // col
+    body.y = state.selectedCell[0]; // row
+  }
+
+  try {
+    const result = await apiCall('POST', '/step', body);
+    state.currentObs = result.observation;
+    renderAll(result.observation);
+
+    const r = result.reward;
+    const sign = r.total >= 0 ? '+' : '';
+    addLog(actionType.toUpperCase(), `reward ${sign}${r.total.toFixed(1)} | ${r.info}`, r.total >= 0 ? 'good' : 'bad');
+
+    if (result.done) {
+      addLog('EPISODE COMPLETE', 'Click GRADE to see final score', 'info');
+      stopAgent();
+    }
+  } catch(e) {
+    addLog('ERROR', e.message, 'bad');
+  }
+}
+
+// ═══════════════════════════════════════════════════
+// AI AGENT (Baseline greedy)
+// ═══════════════════════════════════════════════════
+function toggleAgent() {
+  if (state.agentRunning) { stopAgent(); return; }
+
+  if (!state.currentTask) { alert('Start a mission first!'); return; }
+  if (state.currentObs?.done) { addLog('DONE', 'Reset mission first', 'warn'); return; }
+
+  state.agentRunning = true;
+  document.getElementById('agent-btn').textContent = '⏹ STOP AGENT';
+  document.getElementById('agent-btn').className = 'w-full py-3 bg-red-900/30 border border-red-500/50 text-red-400 font-headline font-black text-xs tracking-widest uppercase transition-all flex items-center justify-center gap-2';
+  document.getElementById('agent-pill').classList.remove('hidden');
+  document.getElementById('agent-pill').classList.add('flex');
+  addLog('AI AGENT', 'Baseline greedy agent activated', 'info');
+
+  state.agentInterval = setInterval(agentStep, 600);
+}
+
+function stopAgent() {
+  state.agentRunning = false;
+  clearInterval(state.agentInterval);
+  document.getElementById('agent-btn').innerHTML = '<span class="material-symbols-outlined text-sm">smart_toy</span>RUN AI AGENT';
+  document.getElementById('agent-btn').className = 'w-full py-3 bg-surface-container border border-green-500/30 text-green-400 font-headline font-black text-xs tracking-widest uppercase hover:bg-green-900/20 transition-all flex items-center justify-center gap-2';
+  document.getElementById('agent-pill').classList.add('hidden');
+  document.getElementById('agent-pill').classList.remove('flex');
+}
+
+async function agentStep() {
+  if (!state.currentObs || state.currentObs.done) { stopAgent(); return; }
+
+  const obs = state.currentObs;
+  const grid = obs.grid;
+  const g = grid.length;
+
+  // Find burning + assets
+  const burning = [];
+  const assets  = [];
+  for (let r = 0; r < g; r++) {
+    for (let c = 0; c < grid[r].length; c++) {
+      if (grid[r][c] === 2) burning.push([r,c]);
+      if (grid[r][c] === 6) assets.push([r,c]);
+    }
+  }
+
+  let action = {action_type:'hold'};
+
+  if (burning.length === 0) { action = {action_type:'hold'}; }
+  else if (obs.time_step % 3 === 0 && assets.length > 0) {
+    action = {action_type:'evacuate_zone'};
+  } else if (obs.resources.aircraft > 0 && burning.length > 0) {
+    const cr = Math.round(burning.reduce((s,[r])=>s+r,0)/burning.length);
+    const cc = Math.round(burning.reduce((s,[,c])=>s+c,0)/burning.length);
+    action = {action_type:'airdrop', x:cc, y:cr};
+  } else if (obs.resources.crews > 0 && burning.length > 0) {
+    action = {action_type:'deploy_crew', x:burning[0][1], y:burning[0][0]};
+  }
+
+  try {
+    const result = await apiCall('POST', '/step', action);
+    state.currentObs = result.observation;
+    renderAll(result.observation);
+    const r = result.reward;
+    addLog('AI: ' + action.action_type.toUpperCase(), `${r.total >= 0 ? '+' : ''}${r.total.toFixed(1)}`, r.total >= 0 ? 'good' : 'bad');
+    if (result.done) { stopAgent(); addLog('AI DONE', 'Grade the mission!', 'info'); }
+  } catch(e) {
+    stopAgent();
+  }
+}
+
+// ═══════════════════════════════════════════════════
+// RESET
+// ═══════════════════════════════════════════════════
+async function resetMission() {
+  if (!state.currentTask) return;
+  stopAgent();
+  showLoading('RESETTING...');
+  try {
+    const data = await apiCall('POST', '/reset', {task_id: state.currentTask});
+    state.currentObs = data.observation;
+    state.selectedCell = null;
+    state.log = [];
+    document.getElementById('log-entries').innerHTML = '';
+    renderAll(data.observation);
+    addLog('RESET', 'Mission restarted', 'info');
+  } catch(e) { alert(e.message); }
+  finally { hideLoading(); }
+}
+
+// ═══════════════════════════════════════════════════
+// GRADE
+// ═══════════════════════════════════════════════════
+async function gradeMission() {
+  if (!state.currentTask) { alert('No active mission'); return; }
+  showLoading('CALCULATING SCORE...');
+  try {
+    const result = await apiCall('POST', '/grader', {task_id: state.currentTask});
+    renderResults(result);
+    showScreen('results');
+  } catch(e) { alert('Grader error: ' + e.message); }
+  finally { hideLoading(); }
+}
+
+function renderResults(result) {
+  const score = result.final_score;
+  const circumference = 2 * Math.PI * 130;
+  const offset = circumference - (score * circumference);
+  document.getElementById('score-ring').style.strokeDashoffset = offset;
+
+  const colors = {success:'#2b97e1', partial:'#f59e0b', failure:'#ff5722'};
+  const badgeColors = {success:'bg-secondary-container text-on-secondary-container', partial:'bg-amber-600 text-white', failure:'bg-error-container text-on-error-container'};
+  document.getElementById('final-score-display').textContent = score.toFixed(2);
+  document.getElementById('outcome-badge').textContent = result.outcome.toUpperCase();
+  document.getElementById('outcome-badge').className = `mt-3 px-6 py-2 font-headline font-black text-xl tracking-widest uppercase ${badgeColors[result.outcome] || ''}`;
+  document.getElementById('score-ring').style.stroke = colors[result.outcome] || '#ff5722';
+
+  // Breakdown bars
+  const bars = document.getElementById('breakdown-bars');
+  bars.innerHTML = '';
+  const breakdown = result.breakdown || {};
+  const barColors = {containment:'bg-primary', asset_protection:'bg-secondary', efficiency:'bg-tertiary-fixed-dim', speed:'bg-outline'};
+  const labels = {containment:'Containment', asset_protection:'Asset Protection', efficiency:'Resource Efficiency', speed:'Response Speed'};
+  for (const [key, val] of Object.entries(breakdown)) {
+    const pct = (val.score * 100).toFixed(0);
+    bars.innerHTML += `
+      <div class="space-y-1">
+        <div class="flex justify-between text-xs font-label uppercase tracking-wider">
+          <span class="text-on-surface-variant">${labels[key]||key}</span>
+          <span class="text-on-surface font-bold">${pct}%</span>
+        </div>
+        <div class="h-2 bg-surface-container-lowest w-full relative">
+          <div class="absolute inset-y-0 left-0 ${barColors[key]||'bg-primary'} transition-all duration-1000" style="width:${pct}%"></div>
+        </div>
+        <div class="text-[9px] text-on-surface-variant">${val.detail||''}</div>
+      </div>`;
+  }
+
+  // Stats
+  const stats = result.stats || {};
+  const sg = document.getElementById('stats-grid');
+  sg.innerHTML = `
+    <div class="bg-surface-container p-2"><div class="text-[9px] text-on-surface-variant">Steps</div><div class="font-mono font-bold">${stats.steps_taken||'—'}</div></div>
+    <div class="bg-surface-container p-2"><div class="text-[9px] text-on-surface-variant">Cells Burned</div><div class="font-mono font-bold text-tertiary">${stats.cells_burned||'—'}</div></div>
+    <div class="bg-surface-container p-2"><div class="text-[9px] text-on-surface-variant">Assets Lost</div><div class="font-mono font-bold text-red-400">${stats.assets_lost||0}/${stats.assets_total||'—'}</div></div>
+    <div class="bg-surface-container p-2"><div class="text-[9px] text-on-surface-variant">Episode Reward</div><div class="font-mono font-bold text-primary">${stats.episode_reward||'—'}</div></div>`;
+
+  // Telemetry strip
+  document.getElementById('result-telemetry').innerHTML = `
+    <div class="text-center"><div class="text-[9px] text-on-surface-variant uppercase font-bold">Final Score</div><div class="text-lg font-headline font-bold text-primary">${score.toFixed(4)}</div></div>
+    <div class="w-px bg-outline-variant/30"></div>
+    <div class="text-center"><div class="text-[9px] text-on-surface-variant uppercase font-bold">Threshold</div><div class="text-lg font-headline font-bold text-secondary">${result.threshold||'—'}</div></div>
+    <div class="w-px bg-outline-variant/30"></div>
+    <div class="text-center"><div class="text-[9px] text-on-surface-variant uppercase font-bold">Steps</div><div class="text-lg font-headline font-bold text-on-surface">${stats.steps_taken||'—'}</div></div>
+    <div class="w-px bg-outline-variant/30"></div>
+    <div class="text-center"><div class="text-[9px] text-on-surface-variant uppercase font-bold">Outcome</div><div class="text-lg font-headline font-bold text-primary">${result.outcome?.toUpperCase()||'—'}</div></div>`;
+}
+
+// ═══════════════════════════════════════════════════
+// LOG
+// ═══════════════════════════════════════════════════
+const logColors = { good:'text-green-400', bad:'text-tertiary', info:'text-secondary', warn:'text-amber-400' };
+function addLog(action, detail, type='info') {
+  const el = document.getElementById('log-entries');
+  const time = new Date().toLocaleTimeString('en',{hour12:false});
+  const div = document.createElement('div');
+  div.className = `log-entry flex gap-3 py-0.5 border-b border-outline-variant/5`;
+  div.innerHTML = `<span class="text-on-surface-variant shrink-0">[${time}]</span><span class="${logColors[type]||''} font-bold shrink-0">${action}</span><span class="text-on-surface-variant truncate">${detail}</span>`;
+  el.insertBefore(div, el.firstChild);
+  if (el.children.length > 50) el.removeChild(el.lastChild);
+}
+function clearLog() { document.getElementById('log-entries').innerHTML = ''; }
+
+// ═══════════════════════════════════════════════════
+// LOADING
+// ═══════════════════════════════════════════════════
+function showLoading(text) {
+  document.getElementById('loading-text').textContent = text;
+  document.getElementById('loading').classList.remove('hidden');
+}
+function hideLoading() {
+  document.getElementById('loading').classList.add('hidden');
+}
+
+// ═══════════════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════════════
+checkApi();
+showScreen('landing');
+</script>
+</body>
+</html>
